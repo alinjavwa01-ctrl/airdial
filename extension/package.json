@@ -11,7 +11,8 @@
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "wxt prepare",
-    "e2e": "wxt build && node e2e/run.mjs"
+    "e2e": "AIRDIAL_E2E_HOSTS=https://shop.airdial-e2e.test/* wxt build && node e2e/run.mjs && wxt build",
+    "e2e:live": "AIRDIAL_E2E_HOSTS=https://shop.airdial-e2e.test/* wxt build && node e2e/live.mjs; wxt build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

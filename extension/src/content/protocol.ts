@@ -14,38 +14,23 @@ export interface PageElement {
 export interface Snapshot {
   url: string;
   title: string;
-  site: string | null;
   text: string;
   truncated: boolean;
   elements: PageElement[];
 }
 
-export interface ChatSummary {
+/** Element info plus its centre in viewport CSS pixels (after scrolling it into view). */
+export interface ElementTarget {
+  ref?: string;
+  role: string;
   name: string;
-  lastMessage: string;
-  time: string;
-  unread: number;
-}
-
-export interface ChatMessage {
-  from: 'them' | 'me';
-  author: string;
-  time: string;
-  text: string;
-}
-
-export interface ChatThread {
-  name: string;
-  messages: ChatMessage[];
-}
-
-export interface Profile {
-  name: string;
-  headline: string;
-  location: string;
-  about: string;
-  experience: string;
-  url: string;
+  tag: string;
+  type?: string;
+  form?: boolean;
+  sensitive?: boolean;
+  editable?: boolean;
+  x: number;
+  y: number;
 }
 
 export type ContentCommand =
@@ -56,8 +41,10 @@ export type ContentCommand =
   | { cmd: 'key'; key: string; ref?: string }
   | { cmd: 'scroll'; direction: 'up' | 'down'; ref?: string }
   | { cmd: 'describe'; ref: string }
-  | { cmd: 'banner'; on: boolean; label?: string }
-  | { cmd: 'site'; action: string; args?: Record<string, unknown> };
+  | { cmd: 'target'; ref?: string; x?: number; y?: number }
+  | { cmd: 'select'; ref: string; option: string }
+  | { cmd: 'hover'; ref: string }
+  | { cmd: 'banner'; on: boolean; label?: string };
 
 export type ContentResponse<T = unknown> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 

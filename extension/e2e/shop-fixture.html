@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lusaka Meat Co.</title>
+<style>
+body{font-family:sans-serif;margin:24px;max-width:640px}
+#reveal{position:fixed;left:700px;top:100px;width:140px;height:40px}
+.msg{padding:6px;border-left:3px solid #ccc;margin:6px 0}
+#composer{border:1px solid #999;min-height:24px;padding:4px}
+</style></head>
+<body>
+<h1>Lusaka Meat Co.</h1>
+<h2>Prices</h2>
+<ul><li>T-bone K120/kg</li><li>Mince K85/kg</li><li>Goat K110/kg</li></ul>
+<button id="reveal">Show phone</button><p id="phone"></p>
+
+<h2>Messages</h2>
+<section id="thread" aria-label="Conversation with Kouvas">
+  <div class="msg"><b>Kouvas</b>: Muli bwanji. How much for 50 kg T-bone? Can you send photos?</div>
+</section>
+<div id="composer" contenteditable="true" role="textbox" aria-label="Message"></div>
+<button id="send">Send</button>
+
+<h2>Contact us</h2>
+<form id="contact">
+  <label>Name <input name="name"></label>
+  <label>Email <input name="email" type="email"></label>
+  <label>Product <select name="product"><option value="">Choose…</option><option value="tbone">T-bone</option><option value="mince">Mince</option></select></label>
+  <label>Your enquiry <textarea name="message"></textarea></label>
+  <label>Password <input name="pw" type="password"></label>
+  <button type="submit">Submit enquiry</button>
+</form>
+<script>
+// Everything here only reacts to trusted (real) input, like many modern sites.
+window.__log = [];
+document.getElementById('reveal').addEventListener('click', (e) => {
+  window.__log.push({ reveal: e.isTrusted });
+  if (e.isTrusted) document.getElementById('phone').textContent = 'Phone: +260 97 000 1111';
+});
+let trustedTyping = false;
+document.getElementById('composer').addEventListener('input', (e) => { if (e.isTrusted) trustedTyping = true; });
+document.getElementById('send').addEventListener('click', (e) => {
+  const box = document.getElementById('composer');
+  const text = box.innerText.trim();
+  window.__log.push({ send: e.isTrusted, trustedTyping, text });
+  if (!e.isTrusted || !text) return;
+  const div = document.createElement('div'); div.className = 'msg'; div.textContent = 'Me: ' + text;
+  document.getElementById('thread').appendChild(div); box.innerHTML = '';
+  window.__sent = (window.__sent || []).concat([text]);
+});
+document.getElementById('contact').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  window.__submissions = (window.__submissions || []).concat([{ trusted: e.isTrusted, ...Object.fromEntries(f) }]);
+  document.getElementById('contact').insertAdjacentHTML('afterend', '<p id="thanks">Thanks, we will reply soon.</p>');
+});
+</script>
+</body></html>

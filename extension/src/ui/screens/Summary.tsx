@@ -88,7 +88,7 @@ export function Summary({ go }: { go: Go }) {
           </div>
         </div>
         {s.replyNames.length > 0 && <div><div className="meta">Replied</div>{s.replyNames.join(', ')}</div>}
-        <div className="meta">{s.tasks} task{s.tasks === 1 ? '' : 's'} today · model cost ${s.costUsd.toFixed(2)}</div>
+        <div className="meta">{s.tasks} task{s.tasks === 1 ? '' : 's'} today{settings.gateway.mode === 'direct' ? ` · model cost $${s.costUsd.toFixed(2)}` : ''}</div>
         <div className="card result" style={{ fontSize: 14 }}>{text}</div>
       </main>
     </>

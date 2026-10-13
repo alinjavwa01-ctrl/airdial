@@ -73,7 +73,7 @@ export async function ensureInjected(tabId: number): Promise<void> {
   if (!(await hasAccess(url))) {
     throw new BrowserError('no_access', `The agent doesn't have access to ${hostOf(url)} yet.`, originPattern(url) ?? undefined);
   }
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['content-scripts/content.js'] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['/page-agent.js'] });
   if (!(await ping(tabId))) throw new BrowserError('inject_failed', `Could not connect to ${hostOf(url)}. Reload the tab and try again.`);
 }
 

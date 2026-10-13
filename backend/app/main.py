@@ -1,7 +1,12 @@
+import logging
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import comms, gateway, whatsapp
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="AirDial Agent backend", version="0.1.0")
 

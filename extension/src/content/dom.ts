@@ -105,6 +105,17 @@ function ensureRef(el: Element): string {
   return ref;
 }
 
+/** The nearest interactive ancestor (or the element itself) at a viewport point. */
+export function interactiveAt(x: number, y: number): HTMLElement | null {
+  const hit = (document.elementsFromPoint(x, y) as HTMLElement[]).find((e) => e.id !== 'airdial-agent-banner') ?? null;
+  if (!hit) return null;
+  return (hit.closest(INTERACTIVE) as HTMLElement | null) ?? hit;
+}
+
+export function ensureElementRef(el: Element): string {
+  return ensureRef(el);
+}
+
 export function findByRef(ref: string): HTMLElement | null {
   if (!/^e\d+$/.test(ref)) return null;
   return document.querySelector<HTMLElement>(`[${REF_ATTR}="${ref}"]`);
@@ -141,9 +152,9 @@ export function pageText(maxChars = 12000): { text: string; truncated: boolean }
   return raw.length > maxChars ? { text: raw.slice(0, maxChars), truncated: true } : { text: raw, truncated: false };
 }
 
-export function snapshot(site: string | null, maxChars = 12000, query?: string): Snapshot {
+export function snapshot(maxChars = 12000, query?: string): Snapshot {
   const { text, truncated } = pageText(maxChars);
-  return { url: location.href, title: document.title, site, text, truncated, elements: listElements(document, query) };
+  return { url: location.href, title: document.title, text, truncated, elements: listElements(document, query) };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

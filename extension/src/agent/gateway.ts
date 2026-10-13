@@ -1,7 +1,8 @@
 // One interface in front of the model. Two transports:
-//  - direct:  the user's own Anthropic key, streamed from the panel (dogfood/dev)
-//  - airdial: AirDial backend /v1/messages, which holds the real key, meters
-//             cost per user and can swap providers (backend/app/gateway.py).
+//  - airdial: the AirDial service (/v1/messages). Customers use this. It is sent
+//             a mode ("best"/"fast"), picks the provider and model, fails over
+//             between providers, meters cost (backend/app/gateway.py).
+//  - direct:  a developer's own Anthropic key, streamed from the panel.
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { Settings } from '../store/types';
@@ -35,15 +36,36 @@ export function makeGateway(settings: Settings): Gateway {
       },
     };
   }
-  if (!g.backendUrl || !g.backendToken) throw new GatewayConfigError('Sign in to AirDial (backend URL and token) in Settings.');
-  // The backend speaks the Messages API shape at /v1/messages, so the SDK
-  // talks to it directly; the AirDial token goes in the api-key header.
+  if (!g.backendUrl || !g.backendToken) throw new GatewayConfigError('Sign in to AirDial in Settings to start.');
+  // The AirDial service speaks the same message format at /v1/messages, so the SDK talks to it
+  // directly. It receives only a mode and the conversation; it chooses the model and provider.
   const client = new Anthropic({ apiKey: g.backendToken, baseURL: g.backendUrl.replace(/\/$/, ''), dangerouslyAllowBrowser: true, maxRetries: 2 });
   return {
     async create(params, { signal }) {
-      return client.beta.messages.create({ ...params, betas: BETAS }, { signal });
+      const { max_tokens, system, tools, messages } = params;
+      return client.beta.messages.create({ model: `airdial-${g.agentMode}`, max_tokens, system, tools, messages }, { signal });
     },
   };
+}
+
+/**
+ * What the customer sees when a model call fails. On an AirDial account the
+ * service already returns AirDial wording; we never show raw vendor errors.
+ * Developers on their own key get the raw message.
+ */
+export function friendlyError(e: unknown, mode: Settings['gateway']['mode']): string {
+  if (e instanceof GatewayConfigError) return e.message;
+  if (mode === 'direct') return (e as Error)?.message ?? String(e);
+  if (e instanceof Anthropic.AuthenticationError) return 'Your AirDial sign-in has expired. Sign in again in Settings.';
+  if (e instanceof Anthropic.APIConnectionError) return "Can't reach AirDial. Check your internet connection and try again.";
+  if (e instanceof Anthropic.APIError) {
+    const msg = (e.error as { error?: { message?: string } } | undefined)?.error?.message;
+    if (msg?.startsWith('AirDial') || msg?.startsWith("You've used")) return msg;
+    if (e.status === 429) return 'AirDial Agent is busy right now. Please try again in a minute.';
+    if ((e.status ?? 0) >= 500) return 'AirDial Agent is busy right now. Please try again in a minute.';
+    return "AirDial Agent couldn't complete this step. Try again, or say it a different way.";
+  }
+  return "Something went wrong. Try again.";
 }
 
 // Opus 5.5 list prices, $ per million tokens, for the cost-per-task readout.

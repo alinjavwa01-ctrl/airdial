@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from '../App';
 import { useStored } from '../../store/storage';
-import { MESSAGE_KINDS, type Effort, type Playbook, type Settings } from '../../store/types';
+import { AGENT_MODES, MESSAGE_KINDS, type Effort, type Playbook, type Settings } from '../../store/types';
 
 const TONES: Playbook['tone'][] = ['warm', 'direct', 'formal', 'playful'];
 const EFFORTS: Effort[] = ['low', 'medium', 'high'];
@@ -45,34 +45,62 @@ function Toggle({ label, hint, checked, onChange }: { label: string; hint?: stri
   );
 }
 
-export function ModelConnection({ settings, set }: { settings: Settings; set: (p: (s: Settings) => Partial<Settings>) => void }) {
+/** Customer sign-in to the AirDial service. Server address is tucked under Advanced. */
+export function AirDialSignIn({ settings, set }: { settings: Settings; set: (p: (s: Settings) => Partial<Settings>) => void }) {
   const g = settings.gateway;
   const setG = (patch: Partial<Settings['gateway']>) => set((s) => ({ gateway: { ...s.gateway, ...patch } }));
   return (
     <div className="stack">
-      <div className="seg" role="group" aria-label="Connection">
-        <button aria-pressed={g.mode === 'airdial'} onClick={() => setG({ mode: 'airdial' })}>AirDial account</button>
-        <button aria-pressed={g.mode === 'direct'} onClick={() => setG({ mode: 'direct' })}>Own API key</button>
-      </div>
-      {g.mode === 'direct' ? (
-        <label className="field">
-          Anthropic API key
-          <input className="input" type="password" autoComplete="off" value={g.apiKey} onChange={(e) => setG({ apiKey: e.target.value.trim() })} placeholder="sk-ant-…" />
-          <span>Stored only in this browser. For testing; teams should use an AirDial account.</span>
+      <label className="field">
+        AirDial access token
+        <input className="input" type="password" autoComplete="off" value={g.backendToken} onChange={(e) => setG({ backendToken: e.target.value.trim(), mode: 'airdial' })} />
+        <span>Find it in your AirDial account under Agent.</span>
+      </label>
+      <details>
+        <summary className="meta">Advanced</summary>
+        <label className="field" style={{ marginTop: 8 }}>
+          AirDial server
+          <input className="input" value={g.backendUrl} onChange={(e) => setG({ backendUrl: e.target.value.trim() })} />
         </label>
-      ) : (
-        <>
-          <label className="field">
-            AirDial server
-            <input className="input" value={g.backendUrl} onChange={(e) => setG({ backendUrl: e.target.value.trim() })} />
-          </label>
-          <label className="field">
-            Access token
-            <input className="input" type="password" autoComplete="off" value={g.backendToken} onChange={(e) => setG({ backendToken: e.target.value.trim() })} />
-          </label>
-        </>
-      )}
+      </details>
     </div>
+  );
+}
+
+/** Developers only: run on your own Anthropic key instead of an AirDial account. */
+function DeveloperConnection({ settings, set }: { settings: Settings; set: (p: (s: Settings) => Partial<Settings>) => void }) {
+  const g = settings.gateway;
+  const setG = (patch: Partial<Settings['gateway']>) => set((s) => ({ gateway: { ...s.gateway, ...patch } }));
+  return (
+    <details open={g.mode === 'direct'}>
+      <summary className="meta">Developer</summary>
+      <div className="stack" style={{ marginTop: 8 }}>
+        <Toggle label="Use my own Anthropic API key" hint="Skips the AirDial service. Shows raw model errors and per-task cost." checked={g.mode === 'direct'} onChange={(v) => setG({ mode: v ? 'direct' : 'airdial' })} />
+        {g.mode === 'direct' && (
+          <>
+            <label className="field">
+              Anthropic API key
+              <input className="input" type="password" autoComplete="off" value={g.apiKey} onChange={(e) => setG({ apiKey: e.target.value.trim() })} placeholder="sk-ant-…" />
+              <span>Stored only in this browser.</span>
+            </label>
+            <label className="field">
+              Model
+              <select className="input" value={g.model} onChange={(e) => setG({ model: e.target.value })}>
+                {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </label>
+            <div className="field">
+              Effort
+              <div className="seg" role="group" aria-label="Effort">
+                {EFFORTS.map((e) => (
+                  <button key={e} aria-pressed={g.effort === e} onClick={() => setG({ effort: e })}>{e}</button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -129,23 +157,16 @@ function AgentSettings({ settings, set }: { settings: Settings; set: (p: (s: Set
       </section>
 
       <section className="stack">
-        <div className="section-title">Model</div>
-        <ModelConnection settings={settings} set={set} />
-        <label className="field">
-          Model
-          <select className="input" value={settings.gateway.model} onChange={(e) => set((s) => ({ gateway: { ...s.gateway, model: e.target.value } }))}>
-            {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-          </select>
-        </label>
-        <div className="field">
-          Effort
-          <div className="seg" role="group" aria-label="Effort">
-            {EFFORTS.map((e) => (
-              <button key={e} aria-pressed={settings.gateway.effort === e} onClick={() => set((s) => ({ gateway: { ...s.gateway, effort: e } }))}>{e}</button>
-            ))}
-          </div>
-          <span>Higher effort is more careful on long tasks and costs more per task.</span>
+        <div className="section-title">Agent mode</div>
+        <div className="seg" role="group" aria-label="Agent mode">
+          {AGENT_MODES.map((m) => (
+            <button key={m.mode} aria-pressed={settings.gateway.agentMode === m.mode} onClick={() => set((s) => ({ gateway: { ...s.gateway, agentMode: m.mode } }))}>{m.label}</button>
+          ))}
         </div>
+        <div className="meta">{AGENT_MODES.find((m) => m.mode === settings.gateway.agentMode)?.hint}</div>
+        <div className="section-title">AirDial account</div>
+        <AirDialSignIn settings={settings} set={set} />
+        <DeveloperConnection settings={settings} set={set} />
       </section>
     </>
   );

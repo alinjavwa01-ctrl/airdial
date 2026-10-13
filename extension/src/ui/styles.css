@@ -1,3 +1,5 @@
+/* AirDial brand tokens (dark wine + pink, per the PRD). Swap these for the
+   airdial.co brand kit; src/brand.ts holds the same values for the page banner. */
 :root {
   --bg: #ffffff;
   --surface: #f7f4f5;

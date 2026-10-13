@@ -1,14 +1,10 @@
 import { defineConfig } from 'wxt';
 
-// Hosts the agent may act on out of the box (PRD default allowlist + LinkedIn).
-// Everything else is requested per site at runtime so Web Store review sees
-// narrow permissions.
-export const DEFAULT_HOSTS = [
-  'https://web.whatsapp.com/*',
-  'https://mail.google.com/*',
-  'https://docs.google.com/*',
-  'https://www.linkedin.com/*',
-];
+// No sites by default: the agent asks for each site the first time it needs
+// it (or the user turns on "Allow on all sites"). Narrow permissions also
+// help Chrome Web Store review. E2E builds add their fixture hosts.
+declare const process: { env: Record<string, string | undefined> };
+const E2E_HOSTS = (process.env.AIRDIAL_E2E_HOSTS ?? '').split(',').filter(Boolean);
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
@@ -16,8 +12,9 @@ export default defineConfig({
   manifest: {
     name: 'AirDial Agent',
     description: 'Keeps your conversations moving. Reads the chat, drafts the reply, follows up on time.',
-    permissions: ['sidePanel', 'storage', 'alarms', 'tabs', 'scripting', 'notifications'],
-    host_permissions: DEFAULT_HOSTS,
+    // debugger: real mouse/keyboard input and screenshots via the DevTools protocol.
+    permissions: ['sidePanel', 'storage', 'alarms', 'tabs', 'scripting', 'notifications', 'debugger'],
+    host_permissions: E2E_HOSTS,
     optional_host_permissions: ['<all_urls>'],
     action: { default_title: 'Open AirDial Agent' },
     commands: {

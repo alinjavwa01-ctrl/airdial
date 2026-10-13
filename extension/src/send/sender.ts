@@ -1,10 +1,9 @@
 // Sends approved messages. Three paths, in order of preference:
 //  1. AirDial WhatsApp Business API (backend) when the user's number is on it.
-//  2. A built-in site sender (WhatsApp Web, LinkedIn) that types at human pace.
-//  3. Anything else: a short browser-agent task with this one send pre-approved.
+//  2. Otherwise: a short browser-agent task, with this one send pre-approved,
+//     that opens the conversation and sends it with real Chrome input.
 // Pacing applies to all of them: bursts get numbers logged out or banned.
 
-import * as browser from '../browser/bridge';
 import { contactKey, load, nowIso, todayLocal, uid, update } from '../store/storage';
 import type { Approval, Contact, SendRecord, Settings } from '../store/types';
 
@@ -38,21 +37,6 @@ export function checkPacing(a: Pick<Approval, 'channel' | 'contactName'>, sends:
 
 export type BrowserTaskSender = (prompt: string, sourceUrl?: string) => Promise<{ ok: boolean; result?: string }>;
 
-const SITE_HOSTS: Record<string, { host: string; url: string; action: string }> = {
-  whatsapp: { host: 'web.whatsapp.com', url: 'https://web.whatsapp.com/', action: 'whatsapp.send' },
-  linkedin: { host: 'www.linkedin.com', url: 'https://www.linkedin.com/messaging/', action: 'linkedin.send' },
-};
-
-async function tabFor(host: string, url: string): Promise<number> {
-  const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((t) => browser.hostOf(t.url) === host);
-  if (existing?.id !== undefined) return existing.id;
-  const tab = await chrome.tabs.create({ url, active: false });
-  await browser.waitForLoad(tab.id!);
-  await new Promise((r) => setTimeout(r, 3000));
-  return tab.id!;
-}
-
 async function sendViaApi(a: Approval, contact: Contact | undefined, settings: Settings): Promise<void> {
   const to = contact?.handle?.replace(/[^\d+]/g, '');
   if (!to) throw new Error(`No phone number saved for ${a.contactName}, so the AirDial API can't reach them.`);
@@ -80,10 +64,6 @@ export async function sendApproval(a: Approval, runBrowserTask: BrowserTaskSende
 
   if (a.channel === 'whatsapp' && settings.airdialApi.enabled && settings.gateway.backendToken) {
     await sendViaApi(a, contact, settings);
-  } else if (SITE_HOSTS[a.channel]) {
-    const site = SITE_HOSTS[a.channel]!;
-    const tabId = await tabFor(site.host, site.url);
-    await browser.call(tabId, { cmd: 'site', action: site.action, args: { name: a.contactName, text: a.draft, cps: settings.pacing.typingCps } });
   } else {
     const res = await runBrowserTask(
       `Send this exact message, already approved by the user, to ${a.contactName}${a.sourceUrl ? ` on ${a.sourceUrl}` : ''}. Do not change a word. Then confirm it was sent.\n\n<message>\n${a.draft}\n</message>`,

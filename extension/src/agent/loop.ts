@@ -4,14 +4,18 @@
 
 import type Anthropic from '@anthropic-ai/sdk';
 import * as browser from '../browser/bridge';
+import * as cdp from '../browser/cdp';
 import { BrowserError } from '../browser/bridge';
 import { load, nowIso, uid, update } from '../store/storage';
 import type { PendingQuestion, PlanStep, Task, TaskLogLine, TaskStatus } from '../store/types';
-import { costOf, makeGateway, GatewayConfigError, type Gateway, type MessageParams } from './gateway';
+import { costOf, friendlyError, makeGateway, type Gateway, type MessageParams } from './gateway';
 import { systemPrompt, taskPreamble } from './prompt';
 import { CUSTOM_TOOLS, SERVER_TOOLS, ToolError, dueContacts, runTool, type ToolContext } from './tools';
 
 const MAX_TURNS = 60;
+
+// Loops currently running; the debugger is detached when the last one ends.
+let activeLoops = 0;
 
 export interface RunnerHooks {
   queueDraft: ToolContext['queueDraft'];
@@ -37,6 +41,7 @@ export class TaskRunner {
   private tabId?: number;
   private saveTimer?: ReturnType<typeof setTimeout>;
   private listeners = new Set<(t: Task) => void>();
+  private gatewayMode: 'direct' | 'airdial' = 'airdial';
 
   constructor(prompt: string, private hooks: RunnerHooks, private opts: RunOptions = {}) {
     this.task = { id: uid('t_'), prompt, createdAt: nowIso(), status: 'running', plan: [], log: [], usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } };
@@ -122,8 +127,9 @@ export class TaskRunner {
     try {
       gateway = this.hooks.gateway ?? makeGateway(settings);
     } catch (e) {
-      return this.fail(e);
+      return this.fail(e, settings.gateway.mode);
     }
+    this.gatewayMode = settings.gateway.mode;
     const direct = settings.gateway.mode === 'direct' && !this.hooks.gateway;
     const tools: Anthropic.Beta.BetaToolUnion[] = [
       // Stream large tool inputs as generated on the direct (streaming) path; inputs are validated with zod before running.
@@ -133,6 +139,7 @@ export class TaskRunner {
     const system = systemPrompt(settings, playbook);
     const ctx = this.toolContext(settings);
     await browser.setBanner(this.tabId, true, 'working');
+    activeLoops++;
 
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -164,7 +171,8 @@ export class TaskRunner {
           }
           throw e;
         }
-        this.addUsage(settings.gateway.model, message);
+        if (direct) this.addUsage(settings.gateway.model, message);
+        else this.addTokens(message);
         this.messages.push({ role: 'assistant', content: message.content as Anthropic.Beta.BetaContentBlockParam[] });
 
         for (const block of message.content) {
@@ -218,6 +226,7 @@ export class TaskRunner {
       this.fail(e);
     } finally {
       await browser.setBanner(this.tabId, false);
+      if (--activeLoops === 0) await cdp.detachAll();
     }
   }
 
@@ -271,6 +280,13 @@ export class TaskRunner {
     return new Promise((r) => this.resumeWaiters.push(r));
   }
 
+  /** AirDial accounts: count tokens only; the service meters cost. */
+  private addTokens(m: Anthropic.Beta.BetaMessage) {
+    const u = this.task.usage!;
+    u.inputTokens += m.usage.input_tokens + (m.usage.cache_read_input_tokens ?? 0) + (m.usage.cache_creation_input_tokens ?? 0);
+    u.outputTokens += m.usage.output_tokens;
+  }
+
   private addUsage(model: string, m: Anthropic.Beta.BetaMessage) {
     const u = this.task.usage!;
     u.inputTokens += m.usage.input_tokens + (m.usage.cache_read_input_tokens ?? 0) + (m.usage.cache_creation_input_tokens ?? 0);
@@ -297,11 +313,10 @@ export class TaskRunner {
     this.persist(true);
   }
 
-  private fail(e: unknown) {
+  private fail(e: unknown, mode = this.gatewayMode) {
     if (this.abort.signal.aborted) return;
-    const msg = e instanceof GatewayConfigError ? e.message : describeError(e);
-    this.log(msg, 'error');
-    this.finish('error', msg);
+    // Shown once, in the result card.
+    this.finish('error', friendlyError(e, mode));
   }
 
   private emit() {
@@ -316,12 +331,4 @@ export class TaskRunner {
     this.saveTimer = setTimeout(write, 250);
     return Promise.resolve();
   }
-}
-
-function describeError(e: unknown): string {
-  const err = e as { status?: number; message?: string };
-  if (err?.status === 401) return 'The model key was rejected. Check Settings.';
-  if (err?.status === 429) return 'Rate limited by the model provider. Try again in a minute.';
-  if (err?.status && err.status >= 500) return 'The model provider is having trouble. Try again shortly.';
-  return err?.message ?? String(e);
 }

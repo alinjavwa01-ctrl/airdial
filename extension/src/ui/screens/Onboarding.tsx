@@ -1,14 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStored } from '../../store/storage';
 import type { Settings } from '../../store/types';
-import { ModelConnection } from './Settings';
+import { AirDialSignIn } from './Settings';
 
-const DEFAULT_SITES = [
-  { host: 'web.whatsapp.com', label: 'WhatsApp Web', why: 'Read chats and send the replies you approve.' },
-  { host: 'mail.google.com', label: 'Gmail', why: 'Read and draft email replies.' },
-  { host: 'docs.google.com', label: 'Google Sheets', why: 'Log outcomes to your sheet.' },
-  { host: 'www.linkedin.com', label: 'LinkedIn', why: 'Read messages and profiles.' },
-];
+function AllSites() {
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    chrome.permissions.contains({ origins: ['<all_urls>'] }).then(setAll);
+  }, []);
+  return (
+    <label className="toggle">
+      <span>
+        Allow on all sites
+        <div className="meta">Best for research and everyday tasks. Turn off any time in Settings.</div>
+      </span>
+      <input
+        type="checkbox"
+        className="switch"
+        checked={all}
+        onChange={async (e) => {
+          if (e.target.checked) setAll(await chrome.permissions.request({ origins: ['<all_urls>'] }));
+          else {
+            await chrome.permissions.remove({ origins: ['<all_urls>'] }).catch(() => false);
+            setAll(false);
+          }
+        }}
+      />
+    </label>
+  );
+}
 
 export function Onboarding() {
   const [settings, setSettings] = useStored('settings');
@@ -28,24 +48,18 @@ export function Onboarding() {
       <label className="field">Business<input className="input" value={settings.businessName} onChange={(e) => set(() => ({ businessName: e.target.value }))} placeholder="Mutambo Beef" /></label>
     </>,
     <>
-      <h2 style={{ margin: 0 }}>Connect</h2>
-      <div className="meta">Sign in with your AirDial account, or use your own Anthropic key while testing.</div>
-      <ModelConnection settings={settings} set={set} />
+      <h2 style={{ margin: 0 }}>Sign in to AirDial</h2>
+      <div className="meta">AirDial Agent runs on your AirDial account. Usage is part of your plan.</div>
+      <AirDialSignIn settings={settings} set={set} />
     </>,
     <>
       <h2 style={{ margin: 0 }}>Where I can work</h2>
-      <div className="meta">I can read and act on these sites from the start. For any other site I'll ask you first, one site at a time.</div>
-      <div className="list">
-        {DEFAULT_SITES.map((s) => (
-          <div key={s.host} className="item" style={{ cursor: 'default' }}>
-            <span className="grow">
-              <strong>{s.label}</strong>
-              <div className="meta">{s.why}</div>
-            </span>
-          </div>
-        ))}
+      <div className="meta">
+        I use your Chrome the way you do: I read pages, click, type and switch tabs, with real mouse and keyboard input. I only work on sites you allow. I'll ask the first time I need a site, or you can let me work everywhere.
       </div>
-      <div className="meta">I never type passwords or card numbers, move money, delete chats or accept terms.</div>
+      <AllSites />
+      <div className="meta">While I'm working, Chrome shows a "started debugging this browser" bar. That's me using the mouse and keyboard; it goes away when I finish.</div>
+      <div className="meta">I never type passwords or card numbers, move money, delete chats or accept terms. Anything sent in your name waits for your approval.</div>
     </>,
     <>
       <h2 style={{ margin: 0 }}>How you talk</h2>

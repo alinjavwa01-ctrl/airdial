@@ -25,10 +25,7 @@ function useActiveTab() {
 }
 
 function suggestionsFor(host: string): string[] {
-  if (host === 'web.whatsapp.com') return ['Draft replies to my unread chats', 'Summarise this chat', 'Who needs a follow-up?'];
-  if (host.endsWith('linkedin.com')) return ['Summarise this profile', 'Draft replies to unread messages'];
-  if (host === 'mail.google.com') return ['Draft replies to today\'s emails', 'What needs me in my inbox?'];
-  if (host) return ['Summarise this page', 'Find the contact details on this site'];
+  if (host) return ['Summarise this page', 'Draft a reply to this conversation', 'Find the contact details on this site'];
   return ['Research suppliers near me', 'Plan my follow-ups for today'];
 }
 

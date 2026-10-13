@@ -30,7 +30,8 @@ export function clickTier(el: ElementInfo): { tier: Tier; reason?: string } {
   const name = el.name ?? '';
   if (NEVER_CLICK.some((r) => r.test(name))) return { tier: 'never', reason: `"${name}" moves money, deletes data or accepts terms` };
   if (APPROVE_CLICK.some((r) => r.test(name))) return { tier: 'approve', reason: `"${name}" acts in your name` };
-  if (el.type === 'submit' || (el.tag === 'button' && el.form && (!el.type || el.type === 'submit'))) return { tier: 'approve', reason: 'submits a form' };
+  // <button> defaults to type=submit even outside a form, so only count it when it is in one.
+  if (el.form && el.type === 'submit') return { tier: 'approve', reason: 'submits a form' };
   return { tier: 'free' };
 }
 

@@ -1,11 +1,13 @@
-// End-to-end test: the built extension in real Chromium, a fake WhatsApp Web,
-// and the real backend with a scripted model (e2e/fake_backend.py).
+// End-to-end test: the built extension in real Chromium, a fixture shop site
+// that only reacts to trusted (real) input, and the real backend with a
+// scripted model (e2e/fake_backend.py).
 //
-//   npm run build && node e2e/run.mjs
+//   npm run e2e
 //
-// Checks: onboarding, task run with plan + live log, the approval gate on a
-// direct "Send" click (denied), draft -> approval queue -> approve -> typed
-// and sent in WhatsApp Web, contact memory, daily summary, backend sync.
+// Checks: onboarding; real clicks by ref and by screenshot coordinates; the
+// approval gate (denied on Send, allowed on Submit); a blocked password field;
+// draft -> approval queue -> approve -> sent by the agent with real typing;
+// form filling with a dropdown; contact memory; daily summary; backend sync.
 
 import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
@@ -20,6 +22,7 @@ const backendDir = resolve(here, '../../backend');
 const shots = resolve(here, '../../docs/screenshots');
 const PORT = 8799;
 const TOKEN = 'e2e-token';
+const SHOP = 'https://shop.airdial-e2e.test/';
 const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 const step = (s) => console.log(`• ${s}`);
@@ -53,17 +56,17 @@ try {
     viewport: { width: 1100, height: 760 },
     args: ['--headless=new', `--disable-extensions-except=${ext}`, `--load-extension=${ext}`, '--no-sandbox'],
   });
-  const fixture = readFileSync(join(here, 'whatsapp-fixture.html'), 'utf8');
-  await context.route('https://web.whatsapp.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: fixture }));
+  const fixture = readFileSync(join(here, 'shop-fixture.html'), 'utf8');
+  await context.route(`${SHOP}**`, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: fixture }));
 
   let [sw] = context.serviceWorkers();
   sw ??= await context.waitForEvent('serviceworker');
   const extId = new URL(sw.url()).host;
   step(`extension loaded (${extId})`);
 
-  const wa = context.pages()[0] ?? (await context.newPage());
-  await wa.goto('https://web.whatsapp.com/');
-  await wa.waitForSelector('#pane-side [role=listitem]');
+  const shop = context.pages()[0] ?? (await context.newPage());
+  await shop.goto(SHOP);
+  await shop.waitForSelector('#contact');
 
   const panel = await context.newPage();
   debugPanel = panel;
@@ -76,9 +79,9 @@ try {
   await panel.getByPlaceholder('Mutambo Beef').fill('Mutambo Beef');
   await panel.screenshot({ path: join(shots, '01-onboarding.png') });
   await panel.getByRole('button', { name: 'Continue' }).click();
-  await panel.getByRole('button', { name: 'AirDial account' }).click();
+  await panel.getByLabel('AirDial access token').fill(TOKEN);
+  await panel.getByText('Advanced').click();
   await panel.getByLabel('AirDial server').fill(`http://127.0.0.1:${PORT}`);
-  await panel.getByLabel('Access token').fill(TOKEN);
   await panel.getByRole('button', { name: 'Continue' }).click();
   await panel.getByRole('button', { name: 'Continue' }).click();
   await panel.getByRole('button', { name: 'Start' }).click();
@@ -86,43 +89,72 @@ try {
   if (stored.settings.userName !== 'Njavwa' || stored.settings.businessName !== 'Mutambo Beef') throw new Error(`onboarding lost fields: ${JSON.stringify(stored.settings)}`);
   step('onboarded');
 
-  // Task
-  await panel.getByLabel('What should I do?').fill('Reply to everyone who asked for prices today');
+  // Task 1: read, real clicks (ref + coordinates), approval gate, draft
+  await panel.getByLabel('What should I do?').fill('Reply to Kouvas on the shop page');
   await panel.screenshot({ path: join(shots, '02-home.png') });
   await panel.keyboard.press('Enter');
   await panel.getByText('Approve this action?').waitFor({ timeout: 30000 });
   await panel.bringToFront();
   await panel.screenshot({ path: join(shots, '03-approve-action.png') });
+  const log1 = await shop.evaluate(() => window.__log);
+  if (!log1.some((l) => l.reveal === true)) throw new Error(`coordinate click was not trusted: ${JSON.stringify(log1)}`);
+  step('real click at screenshot coordinates registered (isTrusted)');
   step('approval gate shown for direct Send click');
   await panel.getByRole('button', { name: 'Deny' }).click();
   await panel.getByText('Drafted 1 reply for approval. Kouvas wants photos.').waitFor({ timeout: 30000 });
   await panel.screenshot({ path: join(shots, '04-task-done.png'), fullPage: true });
-  const sentEarly = await wa.evaluate(() => window.__sent ?? []);
-  if (sentEarly.length) throw new Error('message was sent before approval');
+  if ((await shop.evaluate(() => window.__sent ?? [])).length) throw new Error('message was sent before approval');
   step('task finished; nothing sent before approval');
 
-  // Approval queue
+  // Approval queue -> browser task sends it with real typing + click
   await panel.getByRole('button', { name: /Approve/ }).first().click();
   await panel.getByText('Muli bwanji Kouvas', { exact: false }).waitFor();
   await panel.screenshot({ path: join(shots, '05-approval-queue.png') });
   await panel.getByRole('button', { name: 'Approve', exact: true }).click();
-  step('approved; sending at human pace');
-  await wa.waitForFunction(() => (window.__sent ?? []).length > 0, null, { timeout: 60000 });
-  const sent = await wa.evaluate(() => window.__sent);
-  if (sent[0].name !== 'Kouvas' || !sent[0].text.startsWith('Muli bwanji Kouvas. T-bone ndi K120/kg')) throw new Error(`wrong send: ${JSON.stringify(sent)}`);
-  step(`sent in WhatsApp Web: "${sent[0].text}"`);
+  step('approved; agent is sending it');
+  await shop.waitForFunction(() => (window.__sent ?? []).length > 0, null, { timeout: 60000 });
+  const sendLog = (await shop.evaluate(() => window.__log)).find((l) => 'send' in l && l.text);
+  if (!sendLog.send || !sendLog.trustedTyping || !sendLog.text.startsWith('Muli bwanji Kouvas. T-bone ndi K120/kg')) throw new Error(`send not real: ${JSON.stringify(sendLog)}`);
+  step(`sent with real typing and click: "${sendLog.text}"`);
+  await panel.bringToFront();
+  await panel.getByRole('button', { name: 'Approve' }).first().click();
+  await panel.getByText('Sent', { exact: true }).waitFor({ timeout: 30000 });
+
+  // Task 2: form with real typing, dropdown, blocked password, approved submit
+  await panel.getByRole('button', { name: 'Home' }).click();
+  await panel.getByLabel('What should I do?').fill('Fill in the contact form on the shop: ask if they deliver mince to Kabulonga');
+  await panel.keyboard.press('Enter');
+  await panel.getByText('Approve this action?').waitFor({ timeout: 30000 });
+  await panel.bringToFront();
+  await panel.getByRole('button', { name: 'Allow' }).click();
+  await panel.getByText("Sent the enquiry. They'll reply by email.").waitFor({ timeout: 30000 });
+  await panel.screenshot({ path: join(shots, '06-form-task.png'), fullPage: true });
+  const subs = await shop.evaluate(() => window.__submissions);
+  const sub = subs?.[0];
+  if (!sub || sub.name !== 'Njavwa' || sub.email !== 'njavwa@example.com' || sub.product !== 'mince' || sub.message !== 'Do you deliver to Kabulonga?' || sub.pw)
+    throw new Error(`form submission wrong: ${JSON.stringify(subs)}`);
+  step('form filled with real typing + dropdown, password blocked, submit approved');
+
+  // Provider outage: the customer sees AirDial wording, never the vendor's billing error
+  await panel.getByRole('button', { name: 'Home' }).click();
+  await panel.getByLabel('What should I do?').fill('Summarise this page (simulate outage)');
+  await panel.keyboard.press('Enter');
+  await panel.getByText('AirDial Agent is busy right now. Please try again in a minute.').first().waitFor({ timeout: 60000 });
+  const shown = await panel.locator('main').innerText();
+  if (/credit|balance|anthropic|scripted/i.test(shown)) throw new Error(`vendor error leaked: ${shown}`);
+  await panel.screenshot({ path: join(shots, '07-outage.png') });
+  step('provider outage shows AirDial wording only');
 
   // Contact memory + summary
-  await panel.bringToFront();
   await panel.getByRole('button', { name: 'Contacts' }).click();
   await panel.getByText('Kouvas').first().click();
-  await panel.getByText('Can you send photos?').waitFor();
-  await panel.screenshot({ path: join(shots, '06-contact.png'), fullPage: true });
+  await panel.getByText('Quoted K120/kg for 50 kg').waitFor();
+  await panel.screenshot({ path: join(shots, '08-contact.png'), fullPage: true });
   await panel.getByRole('button', { name: 'Today' }).click();
   await panel.getByText('cash expected', { exact: true }).waitFor();
   const sentKpi = await panel.locator('.kpi b').first().textContent();
   if (sentKpi !== '1') throw new Error(`summary shows ${sentKpi} sent`);
-  await panel.screenshot({ path: join(shots, '07-today.png') });
+  await panel.screenshot({ path: join(shots, '09-today.png') });
   step('contact memory and daily summary updated');
 
   // Backend sync (background worker pushes after ~2s)
@@ -143,15 +175,14 @@ try {
   // Dark mode render of the queue for the design review
   await panel.emulateMedia({ colorScheme: 'dark' });
   await panel.getByRole('button', { name: 'Home' }).click();
-  await panel.screenshot({ path: join(shots, '08-home-dark.png') });
+  await panel.screenshot({ path: join(shots, '10-home-dark.png') });
 
   console.log('\nE2E PASSED');
 } catch (e) {
   console.error('\nE2E FAILED:', e);
   if (debugPanel) {
     await debugPanel.screenshot({ path: join(tmpdir(), 'airdial-e2e-failure.png') }).catch(() => {});
-    const tasks = await debugPanel.evaluate(() => chrome.storage.local.get('tasks')).catch(() => null);
-    console.error(JSON.stringify(tasks, null, 1)?.slice(0, 4000));
+    console.error('--- panel ---\n' + (await debugPanel.locator('main').innerText().catch(() => '')).slice(0, 3000));
   }
   process.exitCode = 1;
 } finally {

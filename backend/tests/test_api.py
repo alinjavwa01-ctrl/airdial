@@ -3,11 +3,11 @@ import os
 os.environ["AIRDIAL_TOKENS"] = "t1:alice,t2:bob"
 os.environ["AIRDIAL_MONTHLY_COST_CAP_USD"] = "1"
 
-import anthropic  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db, gateway  # noqa: E402
+from app.providers import ProviderUnavailable, RequestRejected  # noqa: E402
 from app.main import app  # noqa: E402
 
 A = {"x-api-key": "t1"}
@@ -15,21 +15,24 @@ B = {"x-api-key": "t2"}
 
 
 class FakeProvider:
-    name = "fake"
-
-    def __init__(self, fail_with=None):
+    def __init__(self, name="fake", fail_with=None, modes=("best", "fast")):
+        self.name = name
         self.calls = []
         self.fail_with = fail_with
+        self.modes = modes
 
-    async def create(self, body, betas):
-        self.calls.append((body, betas))
+    def supports(self, mode):
+        return mode in self.modes
+
+    async def create(self, mode, req):
+        self.calls.append((mode, req))
         if self.fail_with:
             raise self.fail_with
         return {
             "id": "msg_1",
             "type": "message",
             "role": "assistant",
-            "model": body["model"],
+            "model": "claude-opus-5-5",
             "content": [{"type": "text", "text": "Drafted 2 replies."}],
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 1000, "output_tokens": 200},
@@ -43,7 +46,7 @@ def fresh_db(tmp_path):
 
 
 client = TestClient(app)
-BODY = {"model": "claude-opus-5-5", "max_tokens": 999999, "messages": [{"role": "user", "content": "hi"}]}
+BODY = {"model": "airdial-best", "max_tokens": 999999, "system": "s", "messages": [{"role": "user", "content": "hi"}]}
 
 
 def test_requires_token():
@@ -51,42 +54,62 @@ def test_requires_token():
     assert client.get("/v1/contacts", headers={"x-api-key": "nope"}).status_code == 401
 
 
-def test_gateway_forwards_caps_and_meters():
+def test_gateway_maps_mode_caps_tokens_and_meters():
     fake = FakeProvider()
     gateway.set_providers([fake])
-    r = client.post("/v1/messages", json=BODY, headers={**A, "anthropic-beta": "server-side-fallback-2026-07-01,thinking-display-updates-2026-08-18"})
+    r = client.post("/v1/messages", json=BODY, headers=A)
     assert r.status_code == 200, r.text
     assert r.json()["content"][0]["text"] == "Drafted 2 replies."
-    body, betas = fake.calls[0]
-    assert body["max_tokens"] == 32000
-    assert betas == ["server-side-fallback-2026-07-01", "thinking-display-updates-2026-08-18"]
+    assert r.json()["model"] == "airdial-best"  # vendor model never reaches the client
+    mode, req = fake.calls[0]
+    assert mode == "best" and req["max_tokens"] == 16000
     assert db.month_cost("alice") == pytest.approx((1000 * 4 + 200 * 20) / 1e6)
     assert db.month_cost("bob") == 0
 
 
-def test_gateway_rejects_unlisted_model_and_stream():
+def test_gateway_rejects_unknown_mode_and_stream():
     gateway.set_providers([FakeProvider()])
-    assert client.post("/v1/messages", json={**BODY, "model": "gpt-x"}, headers=A).json()["error"]["type"] == "invalid_request_error"
+    r = client.post("/v1/messages", json={**BODY, "model": "claude-opus-5-5"}, headers=A)
+    assert r.status_code == 400 and "isn't available" in r.json()["error"]["message"]
     assert client.post("/v1/messages", json={**BODY, "stream": True}, headers=A).status_code == 400
 
 
 def test_gateway_monthly_cap():
     gateway.set_providers([FakeProvider()])
     with db.engine().begin() as conn:
-        conn.execute(db.usage.insert().values(user_id="alice", at=db.now(), model="claude-opus-5-5", input_tokens=1, output_tokens=1, cost_usd=5.0))
+        conn.execute(db.usage.insert().values(user_id="alice", at=db.now(), model="x", input_tokens=1, output_tokens=1, cost_usd=5.0))
     r = client.post("/v1/messages", json=BODY, headers=A)
-    assert r.status_code == 429
+    assert r.status_code == 429 and "allowance" in r.json()["error"]["message"]
     assert client.post("/v1/messages", json=BODY, headers=B).status_code == 200
 
 
-def test_gateway_falls_through_to_backup_provider():
-    import httpx2
-
-    down = FakeProvider(fail_with=anthropic.APIConnectionError(request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")))
-    backup = FakeProvider()
+def test_billing_problem_fails_over_and_never_reaches_customer():
+    down = FakeProvider("anthropic", fail_with=ProviderUnavailable("anthropic: Your credit balance is too low"))
+    backup = FakeProvider("openai")
     gateway.set_providers([down, backup])
-    assert client.post("/v1/messages", json=BODY, headers=A).status_code == 200
-    assert len(backup.calls) == 1
+    r = client.post("/v1/messages", json=BODY, headers=A)
+    assert r.status_code == 200 and len(backup.calls) == 1
+
+
+def test_all_providers_down_gives_airdial_message():
+    gateway.set_providers([FakeProvider("anthropic", fail_with=ProviderUnavailable("anthropic: credit balance is too low")),
+                           FakeProvider("openai", fail_with=RuntimeError("boom"))])
+    r = client.post("/v1/messages", json=BODY, headers=A)
+    assert r.status_code == 503
+    msg = r.json()["error"]["message"]
+    assert msg.startswith("AirDial Agent is busy")
+    assert "credit" not in msg and "anthropic" not in msg.lower() and "openai" not in msg.lower()
+
+
+def test_request_rejected_is_generic():
+    gateway.set_providers([FakeProvider(fail_with=RequestRejected("anthropic: messages.0: bad"))])
+    r = client.post("/v1/messages", json=BODY, headers=A)
+    assert r.status_code == 400 and "messages.0" not in r.text
+
+
+def test_mode_without_provider():
+    gateway.set_providers([FakeProvider(modes=("best",))])
+    assert client.post("/v1/messages", json={**BODY, "model": "airdial-fast"}, headers=A).status_code == 503
 
 
 CONTACT = {

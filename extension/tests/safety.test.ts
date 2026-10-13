@@ -15,6 +15,8 @@ describe('permission tiers', () => {
   it('lets reading and navigation clicks through', () => {
     expect(clickTier({ role: 'link', name: 'Pricing', tag: 'a' }).tier).toBe('free');
     expect(clickTier({ role: 'button', name: 'Kouvas', tag: 'div' }).tier).toBe('free');
+    // Buttons default to type=submit even outside forms.
+    expect(clickTier({ role: 'button', name: 'Show phone', tag: 'button', type: 'submit', form: false }).tier).toBe('free');
     expect(keyTier('Escape', null).tier).toBe('free');
   });
   it('never types into sensitive fields or sensitive text', () => {

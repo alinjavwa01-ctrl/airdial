@@ -16,13 +16,25 @@ export const MESSAGE_KINDS: { kind: MessageKind; label: string }[] = [
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+export type AgentMode = 'best' | 'fast';
+
+export const AGENT_MODES: { mode: AgentMode; label: string; hint: string }[] = [
+  { mode: 'best', label: 'Best', hint: 'Most careful. For long tasks, forms and anything you send.' },
+  { mode: 'fast', label: 'Fast', hint: 'Quicker and lighter. For reading, summaries and quick look-ups.' },
+];
+
+/** Set at build time: WXT_AIRDIAL_API_URL=https://... npm run build */
+export const AIRDIAL_API_URL: string = (import.meta as { env?: Record<string, string | undefined> }).env?.WXT_AIRDIAL_API_URL ?? 'http://localhost:8787';
+
 export interface Settings {
   onboarded: boolean;
   userName: string;
   businessName: string;
   gateway: {
-    /** direct = the user's own Anthropic key (dev/dogfood); airdial = AirDial backend. */
+    /** airdial = the AirDial service (customers); direct = a developer's own Anthropic key. */
     mode: 'direct' | 'airdial';
+    /** AirDial mode. The AirDial service picks the model and provider for it. */
+    agentMode: AgentMode;
     apiKey: string;
     backendUrl: string;
     backendToken: string;
@@ -51,14 +63,15 @@ export const DEFAULT_SETTINGS: Settings = {
   userName: '',
   businessName: '',
   gateway: {
-    mode: 'direct',
+    mode: 'airdial',
+    agentMode: 'best',
     apiKey: '',
-    backendUrl: 'http://localhost:8787',
+    backendUrl: AIRDIAL_API_URL,
     backendToken: '',
     model: 'claude-opus-5-5',
     effort: 'medium',
   },
-  allowedSites: ['web.whatsapp.com', 'mail.google.com', 'docs.google.com', 'www.linkedin.com'],
+  allowedSites: [],
   autoSend: { reply: false, follow_up: false, price_quote: false, confirmation: false, other: false },
   pacing: { newNumberGapSec: 120, dailyCapPerContact: 5, typingCps: 9 },
   languages: ['English', 'Nyanja', 'Bemba', 'French'],
