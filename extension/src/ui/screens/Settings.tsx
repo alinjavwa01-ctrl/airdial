@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { signIn, signOut, signUp } from '../../auth/session';
 import { Header } from '../App';
 import { useStored } from '../../store/storage';
 import { AGENT_MODES, MESSAGE_KINDS, type Effort, type Playbook, type Settings } from '../../store/types';
@@ -45,23 +46,69 @@ function Toggle({ label, hint, checked, onChange }: { label: string; hint?: stri
   );
 }
 
-/** Customer sign-in to the AirDial service. Server address is tucked under Advanced. */
+/** Customer sign-in to the AirDial service (Supabase Auth). Server and internal token under Advanced. */
 export function AirDialSignIn({ settings, set }: { settings: Settings; set: (p: (s: Settings) => Partial<Settings>) => void }) {
   const g = settings.gateway;
   const setG = (patch: Partial<Settings['gateway']>) => set((s) => ({ gateway: { ...s.gateway, ...patch } }));
+  const [tab, setTab] = useState<'in' | 'up'>('in');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setNote(null);
+    try {
+      if (tab === 'in') await signIn(email.trim(), password);
+      else {
+        const s = await signUp(email.trim(), password, settings.userName);
+        if (!s) setNote({ ok: true, text: `Check ${email.trim()} for a confirmation link, then sign in here.` });
+        setTab('in');
+      }
+    } catch (err) {
+      setNote({ ok: false, text: err instanceof Error ? err.message : 'Sign-in failed.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="stack">
-      <label className="field">
-        AirDial access token
-        <input className="input" type="password" autoComplete="off" value={g.backendToken} onChange={(e) => setG({ backendToken: e.target.value.trim(), mode: 'airdial' })} />
-        <span>Find it in your AirDial account under Agent.</span>
-      </label>
+      {g.session ? (
+        <div className="row">
+          <span className="grow">Signed in as <strong>{g.session.email}</strong></span>
+          <button className="btn small" type="button" onClick={() => signOut()}>Sign out</button>
+        </div>
+      ) : (
+        <form className="stack" onSubmit={submit}>
+          <div className="seg" role="group" aria-label="Account">
+            <button type="button" aria-pressed={tab === 'in'} onClick={() => setTab('in')}>Sign in</button>
+            <button type="button" aria-pressed={tab === 'up'} onClick={() => setTab('up')}>Create account</button>
+          </div>
+          <label className="field">Email<input className="input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+          <label className="field">
+            Password
+            <input className="input" type="password" autoComplete={tab === 'in' ? 'current-password' : 'new-password'} required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          <button className="btn primary" type="submit" disabled={busy}>{busy ? 'One moment…' : tab === 'in' ? 'Sign in' : 'Create account'}</button>
+        </form>
+      )}
+      {note && <div className="meta" style={{ color: note.ok ? undefined : 'var(--danger)' }} role="status">{note.text}</div>}
       <details>
         <summary className="meta">Advanced</summary>
-        <label className="field" style={{ marginTop: 8 }}>
-          AirDial server
-          <input className="input" value={g.backendUrl} onChange={(e) => setG({ backendUrl: e.target.value.trim() })} />
-        </label>
+        <div className="stack" style={{ marginTop: 8 }}>
+          <label className="field">
+            AirDial server
+            <input className="input" value={g.backendUrl} onChange={(e) => setG({ backendUrl: e.target.value.trim() })} />
+          </label>
+          <label className="field">
+            Internal access token
+            <input className="input" type="password" autoComplete="off" value={g.backendToken} onChange={(e) => setG({ backendToken: e.target.value.trim(), mode: 'airdial' })} />
+            <span>For AirDial staff testing only.</span>
+          </label>
+        </div>
       </details>
     </div>
   );

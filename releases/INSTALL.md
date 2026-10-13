@@ -1,6 +1,6 @@
-# Install AirDial Agent 1.0.0 in Chrome
+# Install AirDial Agent 1.0.1 in Chrome
 
-1. Download `airdial-agent-1.0.0-chrome.zip` and unzip it.
+1. Download `airdial-agent-1.0.1-chrome.zip` and unzip it.
 2. Open `chrome://extensions` and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the unzipped folder.
 4. Pin AirDial Agent from the puzzle-piece menu, then click its icon (or press Alt+A) to open the side panel.

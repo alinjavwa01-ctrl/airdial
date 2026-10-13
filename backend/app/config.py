@@ -34,7 +34,10 @@ class Settings:
     openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     max_tokens: int = field(default_factory=lambda: int(os.getenv("AIRDIAL_MAX_TOKENS", "16000")))
     monthly_cost_cap_usd: float = field(default_factory=lambda: float(os.getenv("AIRDIAL_MONTHLY_COST_CAP_USD", "0")))
-    # "token:user_id" pairs. Beta-only; swap for Supabase Auth JWTs.
+    # Supabase Auth: customer sessions are verified against this project.
+    supabase_url: str = field(default_factory=lambda: os.getenv("SUPABASE_URL", ""))
+    supabase_jwt_secret: str = field(default_factory=lambda: os.getenv("SUPABASE_JWT_SECRET", ""))
+    # "token:user_id" pairs for internal testing.
     tokens: dict[str, str] = field(
         default_factory=lambda: dict(p.split(":", 1) for p in _list("AIRDIAL_TOKENS") if ":" in p)
     )

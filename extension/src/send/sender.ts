@@ -4,6 +4,7 @@
 //     that opens the conversation and sends it with real Chrome input.
 // Pacing applies to all of them: bursts get numbers logged out or banned.
 
+import { airdialToken } from '../auth/session';
 import { contactKey, load, nowIso, todayLocal, uid, update } from '../store/storage';
 import type { Approval, Contact, SendRecord, Settings } from '../store/types';
 
@@ -42,7 +43,7 @@ async function sendViaApi(a: Approval, contact: Contact | undefined, settings: S
   if (!to) throw new Error(`No phone number saved for ${a.contactName}, so the AirDial API can't reach them.`);
   const res = await fetch(`${settings.gateway.backendUrl.replace(/\/$/, '')}/v1/whatsapp/send`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': settings.gateway.backendToken },
+    headers: { 'content-type': 'application/json', 'x-api-key': await airdialToken() },
     body: JSON.stringify({ to, text: a.draft, kind: a.kind }),
   });
   if (!res.ok) throw new Error(`AirDial API send failed: ${(await res.text()).slice(0, 200)}`);
@@ -62,7 +63,7 @@ export async function sendApproval(a: Approval, runBrowserTask: BrowserTaskSende
     await new Promise((r) => setTimeout(r, Math.min(pace.waitSec!, 30) * 1000));
   }
 
-  if (a.channel === 'whatsapp' && settings.airdialApi.enabled && settings.gateway.backendToken) {
+  if (a.channel === 'whatsapp' && settings.airdialApi.enabled && settings.gateway.mode === 'airdial') {
     await sendViaApi(a, contact, settings);
   } else {
     const res = await runBrowserTask(

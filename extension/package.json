@@ -2,7 +2,7 @@
   "name": "airdial-agent",
   "description": "AirDial Agent: a Chrome side-panel assistant that keeps your conversations moving.",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "wxt",

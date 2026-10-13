@@ -79,9 +79,9 @@ try {
   await panel.getByPlaceholder('Mutambo Beef').fill('Mutambo Beef');
   await panel.screenshot({ path: join(shots, '01-onboarding.png') });
   await panel.getByRole('button', { name: 'Continue' }).click();
-  await panel.getByLabel('AirDial access token').fill(TOKEN);
   await panel.getByText('Advanced').click();
   await panel.getByLabel('AirDial server').fill(`http://127.0.0.1:${PORT}`);
+  await panel.getByLabel('Internal access token').fill(TOKEN);
   await panel.getByRole('button', { name: 'Continue' }).click();
   await panel.getByRole('button', { name: 'Continue' }).click();
   await panel.getByRole('button', { name: 'Start' }).click();

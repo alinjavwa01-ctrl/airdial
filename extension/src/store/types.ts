@@ -37,7 +37,9 @@ export interface Settings {
     agentMode: AgentMode;
     apiKey: string;
     backendUrl: string;
+    /** Internal testing token. Customers sign in instead (session). */
     backendToken: string;
+    session?: { email: string; accessToken: string; refreshToken: string; expiresAt: number };
     model: string;
     effort: Effort;
   };

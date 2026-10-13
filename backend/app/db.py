@@ -91,9 +91,23 @@ _engine: Engine | None = None
 def engine() -> Engine:
     global _engine
     if _engine is None:
-        _engine = create_engine(settings.database_url, future=True)
-        metadata.create_all(_engine)
+        _engine = _make_engine(settings.database_url)
+        if _engine.dialect.name == "sqlite":
+            metadata.create_all(_engine)  # Postgres schema comes from supabase/migrations
     return _engine
+
+
+def _make_engine(url: str) -> Engine:
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    if url.startswith("postgresql"):
+        # Serverless + Supabase transaction pooler: no client-side pool, no prepared statements.
+        from sqlalchemy.pool import NullPool
+
+        return create_engine(url, future=True, poolclass=NullPool, connect_args={"prepare_threshold": None})
+    return create_engine(url, future=True)
 
 
 def reset_engine(url: str) -> Engine:

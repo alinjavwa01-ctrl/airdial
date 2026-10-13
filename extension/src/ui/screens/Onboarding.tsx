@@ -35,7 +35,7 @@ export function Onboarding() {
   const [pb, setPb] = useStored('playbook');
   const [step, setStep] = useState(0);
   const set = (patch: (s: Settings) => Partial<Settings>) => setSettings((s) => ({ ...s, ...patch(s) }));
-  const connected = settings.gateway.mode === 'direct' ? !!settings.gateway.apiKey : !!settings.gateway.backendToken;
+  const connected = settings.gateway.mode === 'direct' ? !!settings.gateway.apiKey : !!settings.gateway.backendToken || !!settings.gateway.session;
 
   const steps = [
     <>

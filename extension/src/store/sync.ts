@@ -3,6 +3,7 @@
 // the working copy so the panel works offline. Only runs on an AirDial account.
 
 import { load, save } from './storage';
+import { airdialToken } from '../auth/session';
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 let running = false;
@@ -25,7 +26,8 @@ export async function syncNow(): Promise<void> {
   try {
     const settings = await load('settings');
     const g = settings.gateway;
-    if (g.mode !== 'airdial' || !g.backendToken || !g.backendUrl) return;
+    if (g.mode !== 'airdial' || (!g.backendToken && !g.session) || !g.backendUrl) return;
+    const token = await airdialToken();
     const [contacts, approvals, audit, state] = await Promise.all([load('contacts'), load('approvals'), load('audit'), load('sync')]);
 
     const hashes: Record<string, string> = {};
@@ -39,7 +41,7 @@ export async function syncNow(): Promise<void> {
 
     const res = await fetch(`${g.backendUrl.replace(/\/$/, '')}/v1/sync`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', 'x-api-key': g.backendToken },
+      headers: { 'content-type': 'application/json', 'x-api-key': token },
       body: JSON.stringify({ contacts: changedContacts, approvals: changedApprovals, audit: newAudit, deletedContactIds }),
     });
     if (!res.ok) throw new Error(`sync ${res.status}`);

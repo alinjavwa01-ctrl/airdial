@@ -24,5 +24,19 @@ app.include_router(whatsapp.router)
 
 
 @app.get("/health")
-def health():
-    return {"ok": True}
+def health(deep: bool = False):
+    if not deep:
+        return {"ok": True}
+    from sqlalchemy import text
+
+    from . import db
+    from .gateway import providers
+
+    try:
+        with db.engine().connect() as conn:
+            conn.execute(text("select 1"))
+        database = "ok"
+    except Exception as e:  # noqa: BLE001
+        database = f"error: {type(e).__name__}"
+    modes = {m: [p.name for p in providers() if p.supports(m)] for m in ("best", "fast")}
+    return {"ok": database == "ok", "database": database, "providers_ready": {m: bool(v) for m, v in modes.items()}}

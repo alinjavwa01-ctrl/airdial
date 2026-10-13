@@ -6,6 +6,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { Settings } from '../store/types';
+import { AuthError, airdialToken } from '../auth/session';
 
 export type MessageParams = Anthropic.Beta.MessageCreateParamsNonStreaming;
 export type Message = Anthropic.Beta.BetaMessage;
@@ -36,12 +37,12 @@ export function makeGateway(settings: Settings): Gateway {
       },
     };
   }
-  if (!g.backendUrl || !g.backendToken) throw new GatewayConfigError('Sign in to AirDial in Settings to start.');
+  if (!g.backendUrl || (!g.backendToken && !g.session)) throw new GatewayConfigError('Sign in to AirDial in Settings to start.');
   // The AirDial service speaks the same message format at /v1/messages, so the SDK talks to it
   // directly. It receives only a mode and the conversation; it chooses the model and provider.
-  const client = new Anthropic({ apiKey: g.backendToken, baseURL: g.backendUrl.replace(/\/$/, ''), dangerouslyAllowBrowser: true, maxRetries: 2 });
   return {
     async create(params, { signal }) {
+      const client = new Anthropic({ apiKey: await airdialToken(), baseURL: g.backendUrl.replace(/\/$/, ''), dangerouslyAllowBrowser: true, maxRetries: 2 });
       const { max_tokens, system, tools, messages } = params;
       return client.beta.messages.create({ model: `airdial-${g.agentMode}`, max_tokens, system, tools, messages }, { signal });
     },
@@ -54,7 +55,7 @@ export function makeGateway(settings: Settings): Gateway {
  * Developers on their own key get the raw message.
  */
 export function friendlyError(e: unknown, mode: Settings['gateway']['mode']): string {
-  if (e instanceof GatewayConfigError) return e.message;
+  if (e instanceof GatewayConfigError || e instanceof AuthError) return e.message;
   if (mode === 'direct') return (e as Error)?.message ?? String(e);
   if (e instanceof Anthropic.AuthenticationError) return 'Your AirDial sign-in has expired. Sign in again in Settings.';
   if (e instanceof Anthropic.APIConnectionError) return "Can't reach AirDial. Check your internet connection and try again.";
